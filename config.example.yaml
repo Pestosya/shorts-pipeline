@@ -1,0 +1,60 @@
+paths:
+  inbox: data/inbox
+  outputs: data/outputs
+  processed: data/processed
+  logs: data/logs
+  branding_dir: data/branding
+
+processing:
+  language: auto           # 'auto', 'ru', 'en', ...
+  use_gpu: true            # true если есть NVIDIA (CUDA)
+  device_index: 0
+  whisper_model: medium    # tiny/base/small/medium/large-v3
+  max_clips_per_episode: 4
+  min_clip_len_sec: 15
+  max_clip_len_sec: 58
+  target_fps: 30
+  target_height: 1920
+  target_width: 1080
+  audio_lufs: -14          # целевая громкость
+
+selection:
+  keywords:
+    - финал
+    - правда
+    - секрет
+    - убийца
+    - любовь
+    - что это
+    - почему
+    - не может быть
+    - wow
+    - no way
+  keyword_weight: 2.0
+  speech_rate_weight: 1.2
+  volume_weight: 1.0       # используется как коэффициент (упрощённо)
+
+branding:
+  watermark: data/branding/watermark.png   # опционально
+  watermark_pos: "10:10"                   # x:y от левого верхнего
+  safe_area_pad: 60
+
+youtube:
+  default_privacy: public
+  default_category_id: 24
+  tags: [official, shorts, series, highlights]
+  title_template: "{show} — {clip_title} | #{show_nospace} #Shorts"
+  description_template: |
+    Официальный клип из сериала «{show}» — {season_episode}.
+    Смотреть полную серию на официальном канале.
+
+    #Shorts #Клипы #Сериал
+
+channels:
+  series_to_channel:
+    "default": "owner1"
+  aliases:
+    owner1:
+      client_secret: auth/owner1_client_secret.json
+      credentials: auth/owner1_credentials.json
+      playlist_id: ""   # опционально
