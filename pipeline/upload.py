@@ -19,7 +19,9 @@ def _auth_for_alias(cfg: Dict[str, Any], alias: str):
         creds = Credentials.from_authorized_user_file(creds_path, SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh()  # type: ignore
+            # Исправляем вызов refresh
+            from google.auth.transport.requests import Request
+            creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(secrets, SCOPES)
             creds = flow.run_local_server(port=0)

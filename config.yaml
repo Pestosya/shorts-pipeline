@@ -10,7 +10,7 @@ processing:
   use_gpu: true            # true если есть NVIDIA (CUDA)
   device_index: 0
   whisper_model: medium    # tiny/base/small/medium/large-v3
-  max_clips_per_episode: 4
+  max_clips_per_episode: 10
   min_clip_len_sec: 15
   max_clip_len_sec: 58
   target_fps: 30
@@ -30,12 +30,87 @@ selection:
     - не может быть
     - wow
     - no way
+    - А
+    - Ааа
+    - Аааа
+    - Ага
+    - Ай
+    - Ах
+    - Ах ты
+    - Боже
+    - Боже мой
+    - Боже правый
+    - Блин
+    - Вот черт
+    - Вот это да
+    - Господи
+    - Да будь я проклят
+    - Дурак
+    - Есть
+    - Жуть
+    - Зашибись
+    - Здорово
+    - Идиот
+    - Какого черта
+    - Караул
+    - Кошмар
+    - Круто
+    - Лопни мои глаза
+    - Мда
+    - Ммм
+    - Надо же
+    - Не может быть
+    - Ничего себе
+    - Ну и ну
+    - Ну вот
+    - О
+    - Ой
+    - Ой-ой-ой
+    - Ого
+    - Ох
+    - Ох ты
+    - Победа
+    - Поделом
+    - Помогите
+    - Превосходно
+    - Прикольно
+    - Прости
+    - С ума сойти
+    - Спасайся
+    - Стоп
+    - Страшно
+    - С ума сойти
+    - Твою же
+    - Твою мать
+    - Точняк
+    - Тьфу
+    - Ты видел
+    - Увы
+    - Угу
+    - Ужас
+    - Ух ты
+    - Ух
+    - Фух
+    - Ха-ха
+    - Хм
+    - Хнык
+    - Чёрт
+    - Чёрт возьми
+    - Чёрт побери
+    - Что
+    - Чтооо
+    - Что это
+    - Э
+    - Эй
+    - Эк
+    - Эх
+    - Я в шоке
   keyword_weight: 2.0
   speech_rate_weight: 1.2
   volume_weight: 1.0       # используется как коэффициент (упрощённо)
 
 branding:
-  watermark: data/branding/watermark.png   # опционально
+  watermark: ""   # опционально
   watermark_pos: "10:10"                   # x:y от левого верхнего
   safe_area_pad: 60
 
@@ -55,6 +130,6 @@ channels:
     "default": "owner1"
   aliases:
     owner1:
-      client_secret: auth/owner1_client_secret.json
+      client_secret: auth/client_secret.json
       credentials: auth/owner1_credentials.json
       playlist_id: ""   # опционально
