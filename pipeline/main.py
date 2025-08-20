@@ -1,10 +1,10 @@
 from pathlib import Path
-import os, logging, srt, yaml
+import os, logging, srt, yaml, shutil
 from .utils import setup_logging, load_config, ensure_ffmpeg, media_info, slugify, derive_show_from_filename, read_meta_yaml
 from .transcribe import transcribe_file
 from .select_clips import pick_clips
 from .edit import render_clip
-from .upload import upload_short
+from .antidetect import apply_antidetect_effects, modify_audio
 
 LOG = logging.getLogger("pipeline.main")
 
@@ -15,6 +15,9 @@ def build_clip_srt(segments, t0, t1):
         if s["end"] < t0 or s["start"] > t1: continue
         st = max(t0, s["start"])
         en = min(t1, s["end"])
+        # Проверяем, чтобы начало было строго меньше конца
+        if st >= en:
+            continue
         subs.append(srt.Subtitle(index=idx, start=srt.timedelta(seconds=st-t0), end=srt.timedelta(seconds=en-t0), content=s["text"]))
         idx += 1
     return srt.compose(subs) if subs else ""
@@ -37,7 +40,8 @@ def process_one(cfg, video_path: Path):
     clips = pick_clips(t["segments"], cfg)
     LOG.info("Picked %d clips", len(clips))
 
-    nospace = "".join([c for c in show if c.isalnum()])
+    # Создаем хештег без пробелов и спецсимволов
+    show_hashtag = "".join([c for c in show if c.isalnum()])
     season_ep = f"S{season or 1}E{episode or 1}"
 
     rendered = []
@@ -48,20 +52,61 @@ def process_one(cfg, video_path: Path):
             f.write(clip_srt_text)
 
         out_mp4 = out_dir / f"{slugify(show)}_{season_ep}_clip{k}.mp4"
+
+        # Удаляем старый файл если существует
+        if out_mp4.exists():
+            out_mp4.unlink()
+
         render_clip(video_path, clip_srt_path, out_mp4, clip, cfg)
 
-        title = cfg["youtube"]["title_template"].format(show=show, clip_title=clip["clip_title"], show_nospace=nospace)
-        desc = cfg["youtube"]["description_template"].format(show=show, season_episode=season_ep)
-        tags = cfg["youtube"]["tags"]
+        # УДАЛЯЕМ ВРЕМЕННЫЙ SRT-ФАЙЛ ПОСЛЕ РЕНДЕРИНГА
+        if clip_srt_path.exists():
+            clip_srt_path.unlink()
+            LOG.debug("Удален временный файл: %s", clip_srt_path.name)
+
+        # ПРИМЕНЯЕМ АНТИДЕТЕКТ-ЭФФЕКТЫ
+        temp_path = out_mp4.with_name(f"temp_{out_mp4.name}")
+
+        # Удаляем временный файл если существует
+        if temp_path.exists():
+            temp_path.unlink()
+
+        # Применяем только видео эффекты
+        apply_antidetect_effects(out_mp4, temp_path)
+
+        # Заменяем оригинал обработанной версией
+        out_mp4.unlink()
+        temp_path.rename(out_mp4)
+
+        # Формируем заголовок с хештегом
+        title = cfg["youtube"]["title_template"].format(
+            show=show,
+            clip_title=clip["clip_title"],
+            show_nospace=show_hashtag,
+            show_hashtag=show_hashtag
+        )
+
+        desc = cfg["youtube"]["description_template"].format(
+            show=show,
+            season_episode=season_ep,
+            show_hashtag=show_hashtag
+        )
+
+        tags = cfg["youtube"]["tags"] + [show_hashtag]
         privacy = cfg["youtube"]["default_privacy"]
         cat = cfg["youtube"]["default_category_id"]
         playlist = cfg["channels"]["aliases"][channel_alias].get("playlist_id","")
 
-        upload_short(cfg, channel_alias, out_mp4, title, desc, tags, privacy, str(cat), playlist)
-        rendered.append(out_mp4)
+        # # ЗАГРУЖАЕМ НА YOUTUBE
+        # try:
+        #     upload_short(cfg, channel_alias, out_mp4, title, desc, tags, privacy, str(cat), playlist)
+        #     rendered.append(out_mp4)
+        # except Exception as e:
+        #     LOG.error("Ошибка загрузки на YouTube: %s", e)
+        #     continue
 
     # Переносим исходник
-    video_path.rename(Path(cfg["paths"]["processed"]) / video_path.name)
+    video_path.rename(proc_dir / video_path.name)
 
 def main():
     root = Path(__file__).resolve().parents[1]
