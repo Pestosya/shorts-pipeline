@@ -1,134 +1,57 @@
+
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 from .utils import run_ffmpeg, srt_escape
+from .antidetect import build_antidetect_filters
 
 def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str, Any], cfg: Dict[str, Any]):
-    # Разрешение для вертикального видео (9:16)
-    target_width = 1080
-    target_height = 1920
+    base_fs = 30
+    clip_len = max(0.1, clip["end"] - clip["start"])
+    anti = build_antidetect_filters(seed_key=f"{input_path.name}-{clip['start']:.3f}-{clip['end']:.3f}", cfg=cfg, clip_duration=clip_len, base_sub_fontsize=base_fs)
 
-    # Получаем информацию о исходном видео
-    from .utils import media_info
-    info = media_info(input_path)
-    src_width = info["width"]
-    src_height = info["height"]
-
-    # Высота области для видео (3/4 экрана)
-    video_area_height = target_height * 3 // 4
-    # Высота области для субтитров (1/4 экрана)
-    subtitle_area_height = target_height // 4
-
-    # Масштабируем видео чтобы оно вписывалось в верхнюю область
-    scale_w = target_width / src_width
-    scale_h = video_area_height / src_height
-    scale_factor = min(scale_w, scale_h)  # Используем min чтобы сохранить пропорции
-
-    new_width = int(src_width * scale_factor)
-    new_height = int(src_height * scale_factor)
-
-    # Вычисляем паддинг для центрирования видео в верхней области
-    pad_x = (target_width - new_width) // 2
-    pad_y = (video_area_height - new_height) // 2
-
-    # Основные фильтры для видео
-    video_filters = [
-        f"scale={new_width}:{new_height}",
-        f"pad={target_width}:{video_area_height}:{pad_x}:{pad_y}:black"
+    vf_chain: List[str] = [
+        "scale=1080:1920:force_original_aspect_ratio=decrease",
+        "pad=1080:1920:(1080-iw)/2:(1920-ih)/2"
     ]
 
-    # Создаем черную плашку для субтитров (1/4 экрана внизу)
-    subtitle_box_filter = f"drawbox=0:{video_area_height}:{target_width}:{subtitle_area_height}:black@1.0:t=fill"
-
-    # Субтитры
     if srt_path.exists():
-        # Стиль субтитров: белый текст на черном фоне
-        subtitle_style = (
-            "FontName=Arial,"
-            "Fontsize=10,"  
-            "PrimaryColour=&H00FFFFFF,"  # Белый текст
-            "OutlineColour=&H00000000,"  # Черная обводка
-            "BackColour=&HFF000000,"  # Черный непрозрачный фон
-            "Bold=1,"  # Жирный шрифт
-            "Outline=1,"  # Обводка
-            "Shadow=0,"  # Без тени
-            "Alignment=2,"  # По центру
-            "MarginV=40,"  # Больший отступ от краев
-            "MarginL=60,"  # Отступ слева
-            "MarginR=60"   # Отступ справа
-        )
+        vf_chain.append(f"subtitles='{srt_escape(srt_path)}':force_style='Outline=1,Fontsize={anti['subtitle_fontsize']}'")
 
-        # Фильтр для субтитров - позиционируем в нижней области
-        subtitle_filter = f"subtitles='{srt_escape(srt_path)}':force_style='{subtitle_style}'"
-
-        # Собираем все фильтры вместе
-        filter_complex = (
-            f"[0:v]{','.join(video_filters)}[video]; "
-            f"[video]{subtitle_box_filter}[video_with_box]; "
-            f"[video_with_box]{subtitle_filter}[outv]"
+    banner = anti["overlay"]
+    if banner["type"] == "banner" and banner["image"]:
+        vf = (
+            f"[0:v] {','.join(vf_chain)} [base]; "
+            f"movie='{banner['image']}' [banner]; "
         )
+        if anti["vf"]:
+            vf = f"[base] {','.join(anti['vf'])} [base2]; " + vf
+            base_in = "base2"
+        else:
+            base_in = "base"
+        vf = vf + banner["filter"].replace("[base]", f"[{base_in}]")
+        final_vf = vf
     else:
-        # Если нет субтитров, просто создаем черную плашку
-        filter_complex = (
-            f"[0:v]{','.join(video_filters)}[video]; "
-            f"[video]{subtitle_box_filter}[outv]"
-        )
+        vf_chain = vf_chain + anti["vf"]
+        if banner["type"] == "watermark" and banner["image"]:
+            x_y = cfg["branding"].get("watermark_pos") or "10:10"
+            vf = "[0:v] " + ",".join([p for p in vf_chain if not p.startswith("movie=")]) + " [v1]; movie='" + banner["image"] + "' [wm]; [v1][wm] overlay=" + x_y
+            final_vf = vf
+        else:
+            final_vf = ",".join(vf_chain)
 
-    # Водяной знак
-    wm = cfg["branding"].get("watermark") or ""
-    wm_path = Path(wm) if wm else None
+    af_chain = [f"loudnorm=I={cfg['processing']['audio_lufs']}:LRA=11:TP=-1.5"] + anti["af"]
 
-    if wm_path and wm_path.exists():
-        x, y = (cfg["branding"].get("watermark_pos") or "10:10").split(":")
+    ss = max(0.0, clip["start"])
+    to = clip_len
 
-        # Добавляем водяной знак к фильтр комплексу
-        final_filter_complex = f"{filter_complex}; [outv][1:v]overlay={x}:{y}[final]"
-        map_output = "[final]"
-
-        af = [f"loudnorm=I={cfg['processing']['audio_lufs']}:LRA=11:TP=-1.5"]
-        ss = max(0.0, clip["start"])
-        to = max(0.1, clip["end"] - clip["start"])
-
-        run_ffmpeg([
-            "-ss", f"{ss:.3f}",
-            "-i", str(input_path),
-            "-i", str(wm_path),
-            "-t", f"{to:.3f}",
-            "-filter_complex", final_filter_complex,
-            "-map", map_output,
-            "-map", "0:a?",
-            "-r", str(cfg["processing"]["target_fps"]),
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "20",
-            "-c:a", "aac",
-            "-b:a", "160k",
-            "-af", ",".join(af),
-            "-aspect", "9:16",
-            str(out_path)
-        ])
-    else:
-        # Без водяного знака
-        final_filter_complex = filter_complex
-        map_output = "[outv]"
-
-        af = [f"loudnorm=I={cfg['processing']['audio_lufs']}:LRA=11:TP=-1.5"]
-        ss = max(0.0, clip["start"])
-        to = max(0.1, clip["end"] - clip["start"])
-
-        run_ffmpeg([
-            "-ss", f"{ss:.3f}",
-            "-i", str(input_path),
-            "-t", f"{to:.3f}",
-            "-filter_complex", final_filter_complex,
-            "-map", map_output,
-            "-map", "0:a?",
-            "-r", str(cfg["processing"]["target_fps"]),
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "20",
-            "-c:a", "aac",
-            "-b:a", "160k",
-            "-af", ",".join(af),
-            "-aspect", "9:16",
-            str(out_path)
-        ])
+    args = [
+        "-ss", f"{ss:.3f}", "-i", str(input_path),
+        "-t", f"{to:.3f}",
+        "-filter_complex", final_vf,
+        "-r", str(cfg["processing"]["target_fps"]),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "160k",
+        "-af", ",".join(af_chain),
+        str(out_path)
+    ]
+    run_ffmpeg(args)

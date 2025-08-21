@@ -1,18 +1,10 @@
+
 from pathlib import Path
 from typing import Dict, Any
 import logging, srt
-
 LOG = logging.getLogger("pipeline.transcribe")
 
 def transcribe_file(path: Path, lang: str, model_name: str, use_gpu: bool, device_index: int) -> Dict[str, Any]:
-    """
-    Возвращает:
-      {
-        "segments": [ {"start": float, "end": float, "text": str} ],
-        "language": "ru",
-        "srt_text": "...",
-      }
-    """
     try:
         from faster_whisper import WhisperModel
     except Exception as e:
@@ -32,7 +24,6 @@ def transcribe_file(path: Path, lang: str, model_name: str, use_gpu: bool, devic
         if getattr(seg, "language", None) and lang_detected is None:
             lang_detected = seg.language
 
-    # SRT
     subs = []
     for i, s in enumerate(segs, 1):
         subs.append(srt.Subtitle(index=i, start=srt.timedelta(seconds=s["start"]), end=srt.timedelta(seconds=s["end"]), content=s["text"]))

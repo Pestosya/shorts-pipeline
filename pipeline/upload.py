@@ -1,14 +1,14 @@
+
 from pathlib import Path
 from typing import Dict, Any, Optional
-import json, os, time, logging
+import json, os, logging
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
 
 LOG = logging.getLogger("pipeline.upload")
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload",
-          "https://www.googleapis.com/auth/youtube"]
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload","https://www.googleapis.com/auth/youtube"]
 
 def _auth_for_alias(cfg: Dict[str, Any], alias: str):
     c = cfg["channels"]["aliases"][alias]
@@ -19,9 +19,7 @@ def _auth_for_alias(cfg: Dict[str, Any], alias: str):
         creds = Credentials.from_authorized_user_file(creds_path, SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            # Исправляем вызов refresh
-            from google.auth.transport.requests import Request
-            creds.refresh(Request())
+            creds.refresh()  # type: ignore
         else:
             flow = InstalledAppFlow.from_client_secrets_file(secrets, SCOPES)
             creds = flow.run_local_server(port=0)

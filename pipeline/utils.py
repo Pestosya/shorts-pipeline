@@ -1,3 +1,4 @@
+
 import os, sys, yaml, logging, subprocess, shutil, json, re
 from pathlib import Path
 from datetime import datetime
@@ -45,12 +46,16 @@ def media_info(path: Path):
     v = next((s for s in j["streams"] if s.get("codec_type")=="video"), {})
     a = next((s for s in j["streams"] if s.get("codec_type")=="audio"), {})
     dur = float(j.get("format",{}).get("duration", 0.0))
+    fps = 30.0
+    if v.get("r_frame_rate"):
+        num, den = v.get("r_frame_rate").split("/")
+        fps = float(num)/float(den) if float(den) != 0 else 30.0
     return dict(
         width=int(v.get("width",1920)),
         height=int(v.get("height",1080)),
         duration=dur,
         has_audio=bool(a),
-        fps=eval(v.get("r_frame_rate","30/1")) if v.get("r_frame_rate") else 30.0
+        fps=fps
     )
 
 def slugify(s: str) -> str:
@@ -60,58 +65,12 @@ def slugify(s: str) -> str:
 
 def derive_show_from_filename(path: Path):
     name = path.stem
-
-    # Популярные паттерны для серий
-    patterns = [
-        # Паттерн: Название Сериала [Сезон] [Эпизод]
-        r"(.*?)[\s._-]*[Ss](\d+)[\s._-]*[Ee](\d+)",
-        # Паттерн: Название Сериала - Эпизод XX
-        r"(.*?)[\s._-]*[Ee]pisode[\s._-]*(\d+)",
-        # Паттерн: Название Сериала - Сезон X Эпизод Y
-        r"(.*?)[\s._-]*[Ss]eason[\s._-]*(\d+)[\s._-]*[Ee]pisode[\s._-]*(\d+)",
-        # Паттерн: Название Сериала - Часть X
-        r"(.*?)[\s._-]*[Pp]art[\s._-]*(\d+)",
-        # Паттерн: Название Сериала - Серия XX
-        r"(.*?)[\s._-]*[Сс]ерия[\s._-]*(\d+)",
-        # Паттерн: Просто цифры в конце (01, 02 и т.д.)
-        r"(.*?)[\s._-]*(\d{2})[^\/]*$"
-    ]
-
-    show = "Series"
-    season = None
-    episode = None
-
-    for pattern in patterns:
-        match = re.search(pattern, name, re.IGNORECASE)
-        if match:
-            if len(match.groups()) >= 2:
-                show = match.group(1).strip()
-                # Убираем лишние символы из названия
-                show = re.sub(r"[._\-]", " ", show)
-                show = re.sub(r"\s+", " ", show).strip()
-
-                if len(match.groups()) >= 3:
-                    season = int(match.group(2))
-                    episode = int(match.group(3))
-                else:
-                    episode = int(match.group(2))
-                    season = 1  # По умолчанию первый сезон
-            break
-
-    # Если не нашли паттерн, пробуем извлечь просто название
-    if show == "Series":
-        # Убираем цифры и расширения в конце
-        show = re.sub(r"[\s._\-]*\d+.*$", "", name)
-        show = re.sub(r"[._\-]", " ", show)
-        show = re.sub(r"\s+", " ", show).strip()
-        show = show or "Series"
-
-    # Убираем common words из названия
-    common_words = ['tv', 'season', 'sezon', 'сезон', 'part', 'часть', 'episode', 'серия', 'video', 'film']
-    show_words = show.split()
-    show = ' '.join([word for word in show_words if word.lower() not in common_words])
-
-    return show, season, episode
+    m = re.search(r"[Ss](\d+)[Ee](\d+)", name)
+    if m:
+        season = int(m.group(1)); episode = int(m.group(2))
+        show = re.sub(r"[._]", " ", re.sub(r"[Ss]\d+[Ee]\d+.*$", "", name)).strip()
+        return show or "Series", season, episode
+    return "Series", None, None
 
 def read_meta_yaml(path: Path):
     meta = path.with_suffix(path.suffix + ".meta.yaml")
@@ -121,5 +80,4 @@ def read_meta_yaml(path: Path):
     return {}
 
 def srt_escape(p: Path) -> str:
-    # Правильные кавычки/слеши для Windows-пути в фильтре subtitles
     return str(p).replace("\\", "\\\\").replace(":", r"\:")

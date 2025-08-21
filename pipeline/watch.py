@@ -1,3 +1,4 @@
+
 from pathlib import Path
 import time, logging
 from watchdog.observers import Observer
@@ -15,7 +16,6 @@ class Handler(FileSystemEventHandler):
         p = Path(event.src_path)
         if p.suffix.lower() not in (".mp4",".mkv",".mov",".m4v"): return
         LOG.info("New file: %s", p.name)
-        # ждём докачку/копирование
         time.sleep(3)
         try:
             process_one(self.cfg, p)

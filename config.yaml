@@ -4,115 +4,52 @@ paths:
   processed: data/processed
   logs: data/logs
   branding_dir: data/branding
+  queue_file: data/queue.json
 
 processing:
-  language: auto           # 'auto', 'ru', 'en', ...
-  use_gpu: true            # true если есть NVIDIA (CUDA)
+  language: auto
+  use_gpu: true
   device_index: 0
-  whisper_model: medium    # tiny/base/small/medium/large-v3
-  max_clips_per_episode: 10
+  whisper_model: medium
+  max_clips_per_episode: 4
   min_clip_len_sec: 15
   max_clip_len_sec: 58
   target_fps: 30
   target_height: 1920
   target_width: 1080
-  audio_lufs: -14          # целевая громкость
+  audio_lufs: -14
 
 selection:
-  keywords:
-    - финал
-    - правда
-    - секрет
-    - убийца
-    - любовь
-    - что это
-    - почему
-    - не может быть
-    - wow
-    - no way
-    - А
-    - Ааа
-    - Аааа
-    - Ага
-    - Ай
-    - Ах
-    - Ах ты
-    - Боже
-    - Боже мой
-    - Боже правый
-    - Блин
-    - Вот черт
-    - Вот это да
-    - Господи
-    - Да будь я проклят
-    - Дурак
-    - Есть
-    - Жуть
-    - Зашибись
-    - Здорово
-    - Идиот
-    - Какого черта
-    - Караул
-    - Кошмар
-    - Круто
-    - Лопни мои глаза
-    - Мда
-    - Ммм
-    - Надо же
-    - Не может быть
-    - Ничего себе
-    - Ну и ну
-    - Ну вот
-    - О
-    - Ой
-    - Ой-ой-ой
-    - Ого
-    - Ох
-    - Ох ты
-    - Победа
-    - Поделом
-    - Помогите
-    - Превосходно
-    - Прикольно
-    - Прости
-    - С ума сойти
-    - Спасайся
-    - Стоп
-    - Страшно
-    - С ума сойти
-    - Твою же
-    - Твою мать
-    - Точняк
-    - Тьфу
-    - Ты видел
-    - Увы
-    - Угу
-    - Ужас
-    - Ух ты
-    - Ух
-    - Фух
-    - Ха-ха
-    - Хм
-    - Хнык
-    - Чёрт
-    - Чёрт возьми
-    - Чёрт побери
-    - Что
-    - Чтооо
-    - Что это
-    - Э
-    - Эй
-    - Эк
-    - Эх
-    - Я в шоке
+  keywords: [финал, правда, секрет, убийца, любовь, почему, не может быть, wow, no way]
   keyword_weight: 2.0
   speech_rate_weight: 1.2
-  volume_weight: 1.0       # используется как коэффициент (упрощённо)
+  volume_weight: 1.0
 
 branding:
-  watermark: ""   # опционально
-  watermark_pos: "10:10"                   # x:y от левого верхнего
+  mode: mixed
+  banner_probability: 0.35
+  watermark: data/branding/watermark.png
+  banner: data/branding/banner.png
+  banner_position: top
+  banner_height_px: 280
+  watermark_pos: "10:10"
   safe_area_pad: 60
+
+antidetect:
+  enable: true
+  eq:
+    contrast: [1.00, 1.08]
+    saturation: [1.00, 1.12]
+    gamma: [0.98, 1.05]
+  vignette_prob: 0.5
+  vignette_strength: 0.35
+  noise_prob: 0.4
+  noise_strength: 3
+  unsharp_prob: 0.6
+  unsharp_luma_msize: 5
+  unsharp_luma_amount: 1.0
+  rotate_prob: 0.0
+  subtitle_fontsize_delta: [-2, 2]
 
 youtube:
   default_privacy: public
@@ -122,7 +59,6 @@ youtube:
   description_template: |
     Официальный клип из сериала «{show}» — {season_episode}.
     Смотреть полную серию на официальном канале.
-
     #Shorts #Клипы #Сериал
 
 channels:
@@ -130,6 +66,11 @@ channels:
     "default": "owner1"
   aliases:
     owner1:
-      client_secret: auth/client_secret.json
+      client_secret: auth/owner1_client_secret.json
       credentials: auth/owner1_credentials.json
-      playlist_id: ""   # опционально
+      playlist_id: ""
+
+scheduler:
+  enabled: true
+  times: ["10:00","13:00","16:00","19:00","22:00"]
+  delete_after_upload: true

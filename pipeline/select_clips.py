@@ -1,5 +1,6 @@
+
 from typing import List, Dict, Any
-import math, re
+import re
 
 def _score_text(txt: str, keywords: List[str]) -> float:
     t = txt.lower()
@@ -15,9 +16,8 @@ def pick_clips(segments: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[Dict
     kw = cfg["selection"]["keywords"]
     kw_w = cfg["selection"]["keyword_weight"]
     sp_w = cfg["selection"]["speech_rate_weight"]
-    vol_w = cfg["selection"]["volume_weight"]   # упрощённо
+    vol_w = cfg["selection"]["volume_weight"]
 
-    # Объединяем последовательные сегменты в окна в пределах [min,max], считаем очки.
     i = 0
     candidates = []
     n = len(segments)
@@ -30,7 +30,7 @@ def pick_clips(segments: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[Dict
             dur = segments[j]["end"] - start
             if dur >= min_len:
                 text = " ".join(acc_text)
-                speech_density = len(text) / max(1.0, dur)             # символ/сек
+                speech_density = len(text) / max(1.0, dur)
                 kw_score = _score_text(text, kw)
                 score = kw_w*kw_score + sp_w*speech_density + vol_w*0.0
                 candidates.append({
@@ -42,7 +42,6 @@ def pick_clips(segments: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[Dict
             j += 1
         i += 1
 
-    # Сортируем и берём топ-N, не давая клипам сильно пересекаться (>40% перекрытия — пропускаем)
     candidates.sort(key=lambda x: x["score"], reverse=True)
     picked = []
     for c in candidates:
@@ -53,14 +52,10 @@ def pick_clips(segments: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[Dict
                 overlap = True
                 break
         if not overlap:
+            words = re.findall(r"\w+", c["text"])
+            clip_title = " ".join(words[:8]) or "Лучший момент"
+            c["clip_title"] = clip_title
             picked.append(c)
         if len(picked) >= cfg["processing"]["max_clips_per_episode"]:
             break
-
-    # Сгенерируем заголовки из текста (просто первые 6-8 слов)
-    for p in picked:
-        words = re.findall(r"\w+", p["text"])
-        clip_title = " ".join(words[:8]) or "Лучший момент"
-        p["clip_title"] = clip_title
-
     return picked
