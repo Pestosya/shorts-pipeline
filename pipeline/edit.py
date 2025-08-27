@@ -1,8 +1,9 @@
-
+import os
 from pathlib import Path
 from typing import Dict, Any, List
 from .utils import run_ffmpeg, srt_escape
 from .antidetect import build_antidetect_filters
+from .pro_enhance import enhance_postprocess
 
 def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str, Any], cfg: Dict[str, Any]):
     base_fs = 30
@@ -44,6 +45,8 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     ss = max(0.0, clip["start"])
     to = clip_len
 
+    tmp_out = out_path.with_suffix(".prepro.mp4")
+
     args = [
         "-ss", f"{ss:.3f}", "-i", str(input_path),
         "-t", f"{to:.3f}",
@@ -52,6 +55,16 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "aac", "-b:a", "160k",
         "-af", ",".join(af_chain),
-        str(out_path)
+        str(tmp_out)
     ]
     run_ffmpeg(args)
+
+    # Пост-обработка: вертикальные режимы, музыка, дакинг, нормализация речи, speed-вар.
+    try:
+        enhance_postprocess(tmp_out, out_path, cfg)
+    finally:
+        try:
+            os.remove(tmp_out)
+        except Exception:
+            pass
+

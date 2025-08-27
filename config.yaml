@@ -74,3 +74,24 @@ scheduler:
   enabled: true
   times: ["10:00","13:00","16:00","19:00","22:00"]
   delete_after_upload: true
+
+pro:
+  enable_postprocess: true
+
+  # Вертикализация финального клипа:
+  # keep | blur_bg | center_crop | letterbox
+  vertical_mode: keep
+  target_width: 1080
+  target_height: 1920
+  fps: 30
+
+  # Аудио
+  music_enabled: true
+  music_dir: data/music
+  music_volume: 0.25
+  speech_normalize: true
+  ducking: true
+
+  # Анти-детект
+  speed_variation: true
+
