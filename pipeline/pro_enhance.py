@@ -1,6 +1,6 @@
 # pipeline/pro_enhance.py
 from pathlib import Path
-import os, random, shutil, subprocess
+import os, random, shutil, subprocess, json
 
 def _run(cmd):
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -8,19 +8,28 @@ def _run(cmd):
         raise RuntimeError("FFmpeg failed\n" + " ".join(cmd) + "\n\n" + p.stdout)
     return p.stdout
 
+def _has_audio(path: Path) -> bool:
+    cmd = ["ffprobe","-v","error","-print_format","json","-show_streams","-show_format", str(path)]
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        return False
+    try:
+        j = json.loads(p.stdout)
+        return any(s.get("codec_type") == "audio" for s in j.get("streams", []))
+    except Exception:
+        return False
+
 def enhance_postprocess(in_path: Path, out_path: Path, cfg: dict):
     """
-    Пост-обработка готового клипа:
-      - вертикализация (keep / blur_bg / center_crop / letterbox)
-      - нормализация речи
-      - добавление фоновой музыки
-      - дакинг (музыка приглушается под речь)
-      - лёгкая вариация скорости (анти-детект)
+    Пост-обработка:
+      - Вертикализация (keep | blur_bg | center_crop | letterbox)
+      - Нормализация речи (если есть)
+      - Фоновая музыка (+ дакинг)
+      - Лёгкая вариация скорости (±3%)
     Управляется секцией cfg['pro'].
     """
     pro = cfg.get("pro", {})
     if not pro.get("enable_postprocess", True):
-        # просто переместить как есть
         if Path(in_path) != Path(out_path):
             shutil.move(str(in_path), str(out_path))
         return
@@ -30,7 +39,7 @@ def enhance_postprocess(in_path: Path, out_path: Path, cfg: dict):
     fps    = int(pro.get("fps", 30))
     mode   = pro.get("vertical_mode", "keep")  # keep | blur_bg | center_crop | letterbox
 
-    # Выбор фонового трека
+    # Музыка (опционально)
     music = None
     mdir = pro.get("music_dir", "data/music")
     if pro.get("music_enabled", True) and os.path.isdir(mdir):
@@ -39,11 +48,11 @@ def enhance_postprocess(in_path: Path, out_path: Path, cfg: dict):
         if files:
             music = random.choice(files)
 
-    # Видео-фильтры
     vf = []
     vf.append("[0:v]scale=-2:-2,setsar=1[v0]")
     vmap = "[v0]"
 
+    # Вертикализация под 9:16
     if mode == "blur_bg":
         vf.append(f"[v0]scale={width}:{height}:force_original_aspect_ratio=increase,boxblur=luma_radius=20:luma_power=1:chroma_radius=20:chroma_power=1[bg]")
         vf.append(f"[v0]scale={width}:-2:force_original_aspect_ratio=decrease[fg]")
@@ -57,47 +66,61 @@ def enhance_postprocess(in_path: Path, out_path: Path, cfg: dict):
         vf.append(f"[v0]scale=-2:{height}:force_original_aspect_ratio=decrease[fg]")
         vf.append(f"[fg]pad={width}:{height}:(ow-iw)/2:(oh-ih)/2[v1]")
         vmap = "[v1]"
-    # mode == keep → ничего не меняем
+    # keep — без изменений
 
-    # Лёгкая рандом-вариация скорости
+    # Лёгкая вариация скорости для анти-детекта
     if pro.get("speed_variation", True):
         spd = random.uniform(0.97, 1.03)
         vf.append(f"{vmap}setpts={1.0/spd}*PTS[v2]")
         vmap = "[v2]"
 
-    # Аудио-фильтры
+    has_a = _has_audio(in_path)
     a_filters = []
-    amapsrc = "[0:a]"
-    if pro.get("speech_normalize", True):
-        a_filters.append(f"{amapsrc}dynaudnorm=f=250:g=15:n=1[a0]")
-        amapsrc = "[a0]"
-
-    # Входы
     inputs = ["-i", str(in_path)]
     music_index = None
+
     if music and os.path.isfile(music):
         inputs += ["-i", str(music)]
         music_index = 1
 
-    if music_index is not None:
-        mv = float(pro.get("music_volume", 0.25))
-        if pro.get("ducking", True):
-            a_filters.append(f"[{music_index}:a]pan=stereo|c0=c0|c1=c1,adelay=0|0,volume={mv}[bg]")
-            a_filters.append(f"[bg]{amapsrc}sidechaincompress=threshold=0.05:ratio=10:attack=20:release=500[ducked]")
-            a_filters.append(f"{amapsrc}[ducked]amix=inputs=2:duration=first:dropout_transition=2[aout]")
+    if has_a:
+        amapsrc = "[0:a]"
+        if pro.get("speech_normalize", True):
+            a_filters.append(f"{amapsrc}dynaudnorm=f=250:g=15:n=1[a0]")
+            amapsrc = "[a0]"
+        if music_index is not None:
+            mv = float(pro.get("music_volume", 0.25))
+            if pro.get("ducking", True):
+                a_filters.append(f"[{music_index}:a]pan=stereo|c0=c0|c1=c1,adelay=0|0,volume={mv}[bg]")
+                a_filters.append(f"[bg]{amapsrc}sidechaincompress=threshold=0.05:ratio=10:attack=20:release=500[ducked]")
+                a_filters.append(f"{amapsrc}[ducked]amix=inputs=2:duration=first:dropout_transition=2[aout]")
+            else:
+                a_filters.append(f"{amapsrc}[{music_index}:a]amix=inputs=2:duration=first:dropout_transition=2,volume=1.0[aout]")
         else:
-            a_filters.append(f"{amapsrc}[{music_index}:a]amix=inputs=2:duration=first:dropout_transition=2,volume=1.0[aout]")
+            a_filters.append(f"{amapsrc}anull[aout]")
+        audio_map = "[aout]"
+        audio_args = ["-c:a","aac","-b:a","160k"]
     else:
-        a_filters.append(f"{amapsrc}anull[aout]")
+        # Нет аудио в исходнике: используем только музыку или генерим тишину
+        if music_index is not None:
+            a_filters.append(f"[{music_index}:a]pan=stereo|c0=c0|c1=c1,volume={float(pro.get('music_volume',0.25))}[aout]")
+            audio_map = "[aout]"
+            audio_args = ["-c:a","aac","-b:a","160k"]
+        else:
+            audio_map = "anullsrc=channel_layout=stereo:sample_rate=48000[aout]"
+            # anullsrc — это источник внутри filter_complex; подключим через -map позже
+            a_filters.insert(0, audio_map)
+            audio_map = "[aout]"
+            audio_args = ["-c:a","aac","-b:a","160k"]
 
     filter_complex = ";".join(vf + a_filters)
     cmd = ["ffmpeg","-y","-hide_banner","-loglevel","error"] + inputs + [
         "-filter_complex", filter_complex,
-        "-map", vmap, "-map", "[aout]",
+        "-map", vmap, "-map", audio_map,
         "-r", str(fps),
         "-c:v","libx264","-preset","veryfast","-crf","20",
         "-pix_fmt","yuv420p",
-        "-c:a","aac","-b:a","160k",
+        *audio_args,
         "-movflags","+faststart",
         str(out_path)
     ]
