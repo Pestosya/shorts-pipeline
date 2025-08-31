@@ -64,15 +64,28 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
 
     # Субтитры — компактнее и читабельнее
     # уменьшили относительно anti['subtitle_fontsize'] и добавили полупрозрачный фон
-    sub_fs = max(20, min(28, anti.get("subtitle_fontsize", sub_base) - 2))
-    margin_v = int(render.get("subtitle_margin_v", 90))
+    # Субтитры — компактные и читабельные (Windows-дружелюбный Arial)
+    sub_fs = max(20, min(24, anti.get("subtitle_fontsize", sub_base) - 2))
+    margin_v = int(render.get("subtitle_margin_v", 110))
+    margin_lr = int(render.get("subtitle_margin_lr", 120))
+
+    # Стиль без сплошной подложки (BorderStyle=1), лёгкий оутлайн
     style = (
-        f"Fontname=DejaVu Sans,Fontsize={sub_fs},"
-        f"PrimaryColour=&H00FFFFFF,OutlineColour=&H66000000,"
-        f"BorderStyle=3,Outline=0,BackColour=&H66000000,Shadow=0,"
-        f"Alignment=2,MarginV={margin_v},MarginL=40,MarginR=40,WrapStyle=3"
+        f"Fontname=Arial,Fontsize={sub_fs},"
+        f"PrimaryColour=&H00FFFFFF,OutlineColour=&H99000000,"
+        f"BorderStyle=1,Outline=2,Shadow=0,"
+        f"Alignment=2,MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},WrapStyle=2"
     )
-    vf_chain.append(f"subtitles=f='{srt_escape(srt_path)}':force_style='{style}'")
+
+    # Если хочешь полупрозрачную плашку под текстом — раскомментируй этот блок вместо style:
+    # style = (
+    #     f"Fontname=Arial,Fontsize={sub_fs},"
+    #     f"PrimaryColour=&H00FFFFFF,OutlineColour=&H66000000,"
+    #     f"BorderStyle=3,Outline=2,Shadow=0,"
+    #     f"Alignment=2,MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},WrapStyle=2"
+    # )
+
+    vf_chain.append(f"subtitles=f='{srt_escape(srt_path)}':charenc=UTF-8:force_style='{style}'")
 
     # Оверлеи из anti (watermark/banner) — уже безопасны после правки antidetect.py
     ov = anti.get("overlay") or {}
