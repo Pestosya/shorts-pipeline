@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Dict, Any
 import logging, srt
+from faster_whisper import WhisperModel
 
 LOG = logging.getLogger("pipeline.transcribe")
 
