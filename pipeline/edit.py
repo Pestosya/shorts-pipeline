@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Dict, Any
 from .utils import run_ffmpeg, srt_escape
 from .pro_enhance import enhance_postprocess
+from .antidetect import build_antidetect_filters
 
 def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str, Any], cfg: Dict[str, Any]):
     """

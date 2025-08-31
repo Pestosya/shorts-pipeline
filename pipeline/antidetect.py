@@ -93,3 +93,21 @@ def build_antidetect_filters(seed_key: str, cfg: Dict[str, Any], clip_duration: 
         "subtitle_fontsize": sub_fs,
         "overlay": {"type": overlay_type, "image": img, "filter": overlay_filter}
     }
+
+# --- Backward compatibility with legacy imports in main.py ---
+
+def apply_antidetect_effects(seed_key: str, cfg: dict, clip_duration: float, base_sub_fontsize: int = 30):
+    """
+    Старое имя функции.
+    Возвращает тот же dict, что и build_antidetect_filters(...):
+      { "vf": [...], "af": [...], "subtitle_fontsize": int, "overlay": {...} }
+    """
+    return build_antidetect_filters(seed_key, cfg, clip_duration, base_sub_fontsize)
+
+def modify_audio(audio_filters, cfg: dict):
+    """
+    Исторически могла дополнять аудио-цепочку.
+    Сейчас фильтры аудио формируются в build_antidetect_filters/edit.py.
+    Оставляем no-op для совместимости.
+    """
+    return audio_filters
