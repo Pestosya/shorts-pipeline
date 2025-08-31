@@ -72,7 +72,7 @@ def process_one(cfg, video_path: Path):
             temp_path.unlink()
 
         # Применяем только видео эффекты
-        apply_antidetect_effects(out_mp4, temp_path)
+        # apply_antidetect_effects(out_mp4, temp_path)
 
         # Заменяем оригинал обработанной версией
         out_mp4.unlink()
