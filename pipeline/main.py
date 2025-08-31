@@ -4,7 +4,6 @@ from .utils import setup_logging, load_config, ensure_ffmpeg, media_info, slugif
 from .transcribe import transcribe_file
 from .select_clips import pick_clips
 from .edit import render_clip
-from .antidetect import build_antidetect_filters
 
 LOG = logging.getLogger("pipeline.main")
 
@@ -59,24 +58,14 @@ def process_one(cfg, video_path: Path):
 
         render_clip(video_path, clip_srt_path, out_mp4, clip, cfg)
 
-        # УДАЛЯЕМ ВРЕМЕННЫЙ SRT-ФАЙЛ ПОСЛЕ РЕНДЕРИНГА
+        # Удаляем временный SRT-файл после рендера
         if clip_srt_path.exists():
             clip_srt_path.unlink()
             LOG.debug("Удален временный файл: %s", clip_srt_path.name)
 
-        # ПРИМЕНЯЕМ АНТИДЕТЕКТ-ЭФФЕКТЫ
-        temp_path = out_mp4.with_name(f"temp_{out_mp4.name}")
-
-        # Удаляем временный файл если существует
-        if temp_path.exists():
-            temp_path.unlink()
-
-        # Применяем только видео эффекты
-        # apply_antidetect_effects(out_mp4, temp_path)
-
-        # Заменяем оригинал обработанной версией
-        out_mp4.unlink()
-        temp_path.rename(out_mp4)
+        # ВНИМАНИЕ: никаких temp_* больше не делаем —
+        # render_clip уже вывел готовый финальный файл (музыка/дакинг/нормализация/скорость внутри edit.py)
+        LOG.info("Saved %s", out_mp4.name)
 
         # Формируем заголовок с хештегом
         title = cfg["youtube"]["title_template"].format(
