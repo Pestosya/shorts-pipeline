@@ -121,5 +121,16 @@ def read_meta_yaml(path: Path):
     return {}
 
 def srt_escape(p: Path) -> str:
-    # Правильные кавычки/слеши для Windows-пути в фильтре subtitles
-    return str(p).replace("\\", "\\\\").replace(":", r"\:")
+    """
+    Возвращает строку для ffmpeg filter_complex subtitles:
+    - Windows-пути переводим в POSIX (forward slashes)
+    - Если абсолютный путь с буквой диска, экранируем двоеточие после буквы (C\:/...)
+    - Экранируем одинарные кавычки
+    """
+    p = Path(p)
+    s = p.as_posix()              # backslashes -> forward slashes
+    # Абсолютный Windows-путь: 'C:/...' → 'C\:/...'
+    if len(s) >= 2 and s[1] == ':' and s[0].isalpha():
+        s = s[0] + r'\:' + s[2:]
+    s = s.replace("'", r"\'")
+    return s

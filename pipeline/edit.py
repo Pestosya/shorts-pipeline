@@ -72,7 +72,7 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
         f"BorderStyle=3,Outline=0,BackColour=&H66000000,Shadow=0,"
         f"Alignment=2,MarginV={margin_v},MarginL=40,MarginR=40,WrapStyle=3"
     )
-    vf_chain.append(f"subtitles={srt_escape(srt_path)}:force_style='{style}'")
+    vf_chain.append(f"subtitles=f='{srt_escape(srt_path)}':force_style='{style}'")
 
     # Оверлеи из anti (watermark/banner) — уже безопасны после правки antidetect.py
     ov = anti.get("overlay") or {}
