@@ -8,3 +8,4 @@ srt==3.5.3
 pydub==0.25.1
 opencv-python==4.10.0.84
 python-dotenv==1.0.1
+opencv-python

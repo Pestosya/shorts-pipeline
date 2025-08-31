@@ -4,6 +4,7 @@ from typing import Dict, Any
 from .utils import run_ffmpeg, srt_escape
 from .pro_enhance import enhance_postprocess
 from .antidetect import build_antidetect_filters
+from .framing import suggest_crop
 
 def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str, Any], cfg: Dict[str, Any]):
     """
@@ -33,7 +34,7 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
         base_sub_fontsize=base_fs
     )
 
-    # Геометрия исходника → выбираем fill/pad
+    # Геометрия исходника → выбираем fill/pad, c optional smart-crop
     try:
         info = media_info(input_path)
         src_w, src_h = int(info.get("width", 1920)), int(info.get("height", 1080))
@@ -41,18 +42,28 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     except Exception:
         src_w, src_h, has_audio = 1920, 1080, True
 
+    target_w = int(render.get("target_width", 1080))
+    target_h = int(render.get("target_height", 1920))
     target_ar = target_w / target_h
-    src_ar = (src_w / src_h) if src_h else (16/9)
+    src_ar = (src_w / src_h) if src_h else (16 / 9)
 
     vf_chain: List[str] = []
+    smart_crop = bool(render.get("smart_crop", True))
     if src_ar >= target_ar:
-        # Широкие/горизонтальные → fill (увеличить и центр-кропнуть под 9:16)
-        vf_chain += [
-            f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase",
-            f"crop={target_w}:{target_h}:(iw-{target_w})/2:(ih-{target_h})/2"
-        ]
+        # landscape → fill + (опционально) умный кроп по лицам/интересу
+        if smart_crop:
+            cx, cy = suggest_crop(input_path, clip["start"], clip_len, src_w, src_h, target_w, target_h)
+            vf_chain += [
+                f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase",
+                f"crop={target_w}:{target_h}:{int(cx)}:{int(cy)}"
+            ]
+        else:
+            vf_chain += [
+                f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase",
+                f"crop={target_w}:{target_h}:(iw-{target_w})/2:(ih-{target_h})/2"
+            ]
     else:
-        # Узкие/вертикальные → вписать и допаддить
+        # вертикальные/узкие → вписать и допаддить
         vf_chain += [
             f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease",
             f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2"
@@ -65,25 +76,19 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     # Субтитры — компактнее и читабельнее
     # уменьшили относительно anti['subtitle_fontsize'] и добавили полупрозрачный фон
     # Субтитры — компактные и читабельные (Windows-дружелюбный Arial)
+    # Субтитры — компактные: меньше кегль, большие поля, мягкий оутлайн
     sub_fs = max(20, min(24, anti.get("subtitle_fontsize", sub_base) - 2))
     margin_v = int(render.get("subtitle_margin_v", 110))
-    margin_lr = int(render.get("subtitle_margin_lr", 120))
+    margin_lr = int(render.get("subtitle_margin_lr", 130))
+    line_spacing = int(render.get("subtitle_line_spacing", 4))
 
-    # Стиль без сплошной подложки (BorderStyle=1), лёгкий оутлайн
     style = (
         f"Fontname=Arial,Fontsize={sub_fs},"
         f"PrimaryColour=&H00FFFFFF,OutlineColour=&H99000000,"
         f"BorderStyle=1,Outline=2,Shadow=0,"
-        f"Alignment=2,MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},WrapStyle=2"
+        f"Alignment=2,MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
+        f"WrapStyle=2,Spacing=0,OutlineAlpha=0,BackColour=&H40000000,LineSpacing={line_spacing}"
     )
-
-    # Если хочешь полупрозрачную плашку под текстом — раскомментируй этот блок вместо style:
-    # style = (
-    #     f"Fontname=Arial,Fontsize={sub_fs},"
-    #     f"PrimaryColour=&H00FFFFFF,OutlineColour=&H66000000,"
-    #     f"BorderStyle=3,Outline=2,Shadow=0,"
-    #     f"Alignment=2,MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},WrapStyle=2"
-    # )
 
     vf_chain.append(f"subtitles=f='{srt_escape(srt_path)}':charenc=UTF-8:force_style='{style}'")
 

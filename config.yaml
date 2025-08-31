@@ -18,6 +18,16 @@ processing:
   target_width: 1080
   audio_lufs: -14          # целевая громкость
 
+render:
+  target_width: 1080
+  target_height: 1920
+  smart_crop: true          # ← включить умный кроп
+  subtitle_fontsize_base: 24
+  subtitle_margin_v: 110
+  subtitle_margin_lr: 130
+  subtitle_line_spacing: 4
+
+
 selection:
   keywords:
     - финал
