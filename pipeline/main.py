@@ -4,7 +4,7 @@ from .utils import setup_logging, load_config, ensure_ffmpeg, media_info, slugif
 from .transcribe import transcribe_file
 from .select_clips import pick_clips
 from .edit import render_clip
-from .antidetect import apply_antidetect_effects, modify_audio
+from .antidetect import build_antidetect_filters
 
 LOG = logging.getLogger("pipeline.main")
 

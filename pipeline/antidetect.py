@@ -96,18 +96,67 @@ def build_antidetect_filters(seed_key: str, cfg: Dict[str, Any], clip_duration: 
 
 # --- Backward compatibility with legacy imports in main.py ---
 
-def apply_antidetect_effects(seed_key: str, cfg: dict, clip_duration: float, base_sub_fontsize: int = 30):
+# --- Backward compatibility for legacy imports and calls ---
+
+def apply_antidetect_effects(*args, **kwargs):
     """
-    Старое имя функции.
-    Возвращает тот же dict, что и build_antidetect_filters(...):
-      { "vf": [...], "af": [...], "subtitle_fontsize": int, "overlay": {...} }
+    Поддерживает два стиля вызова:
+
+    1) Новый (рекомендуемый):
+       apply_antidetect_effects(seed_key, cfg, clip_duration, base_sub_fontsize=30) -> dict,
+       эквивалент build_antidetect_filters(...)
+
+    2) Старый «файловый»:
+       apply_antidetect_effects(in_path, out_path)              -> применить постпроцесс (или скопировать)
+       apply_antidetect_effects(in_path, out_path, cfg)         -> то же, с конфигом
+       Где in_path / out_path — пути к файлам видео.
+
+    Для (2) используется pro_enhance.enhance_postprocess, если он есть.
+    Иначе — просто копируем вход в выход (no-op).
     """
+    from pathlib import Path
+    import shutil
+
+    # Вариант 2: оба первых аргумента — пути (str/Path)
+    if len(args) >= 2 and isinstance(args[0], (str, Path)) and isinstance(args[1], (str, Path)):
+        in_path = Path(args[0])
+        out_path = Path(args[1])
+        cfg = args[2] if len(args) >= 3 else {}
+
+        # Если перепутали порядок и существует только второй — меняем местами
+        if not in_path.exists() and out_path.exists():
+            in_path, out_path = out_path, in_path
+
+        try:
+            # Если есть модуль постпроцесса — применим его
+            from .pro_enhance import enhance_postprocess
+            # Если конфиг не передали — отключим постпроцесс явно
+            if not cfg:
+                cfg = {"pro": {"enable_postprocess": False}}
+            enhance_postprocess(in_path, out_path, cfg)
+        except Exception:
+            # Фолбэк: просто копируем файл
+            if in_path != out_path:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(in_path, out_path)
+        return out_path
+
+    # Вариант 1: «новая» сигнатура → проксируем к build_antidetect_filters
+    seed_key = args[0]
+    cfg = args[1]
+    clip_duration = args[2]
+    base_sub_fontsize = kwargs.get("base_sub_fontsize", 30)
     return build_antidetect_filters(seed_key, cfg, clip_duration, base_sub_fontsize)
 
-def modify_audio(audio_filters, cfg: dict):
+
+def modify_audio(*args, **kwargs):
     """
-    Исторически могла дополнять аудио-цепочку.
-    Сейчас фильтры аудио формируются в build_antidetect_filters/edit.py.
-    Оставляем no-op для совместимости.
+    Историческая функция. Сейчас аудиофильтры формируются в build_antidetect_filters/edit.py.
+    Для совместимости:
+      - если передали список фильтров, вернём его как есть;
+      - в остальных случаях — no-op.
     """
-    return audio_filters
+    if args:
+        return args[0]
+    return []
+
