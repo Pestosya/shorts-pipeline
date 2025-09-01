@@ -13,46 +13,116 @@ import os, logging
 
 from .utils import run_ffmpeg, srt_escape, media_info
 from .antidetect import build_antidetect_filters
-# pro_enhance можно оставить, если используешь постпроцесс. Если нет — закомментируй импорт и вызов.
-from .pro_enhance import enhance_postprocess
+# --- SRT helpers: компактные строки, мягкие переносы, корректные тайминги ---
+import srt as _srt
+import textwrap
 
-LOG = logging.getLogger("pipeline.edit")
+def _soft_break_long_tokens(text: str, max_token: int = 12) -> str:
+    """
+    Разбиваем очень длинные слова U+200B, чтобы libass мог переносить внутри слова.
+    """
+    out = []
+    for tok in (text or "").split():
+        if len(tok) > max_token:
+            chunks = [tok[i:i+max_token] for i in range(0, len(tok), max_token)]
+            out.append("\u200b".join(chunks))
+        else:
+            out.append(tok)
+    return " ".join(out)
 
-def _build_sub_style(cfg: dict) -> str:
-    sub = cfg.get("subtitles", {})
-    font = sub.get("font", "Arial")
-    size = int(sub.get("size", 22))
-    margin_v = int(sub.get("margin_v", 130))
-    margin_lr = int(sub.get("margin_lr", 190))
-    line_spacing = int(sub.get("line_spacing", 2))
-    # Жёсткий низ кадра
-    align = 2  # 2 = bottom-center
+def _wrap_lines_cfg(text: str, cfg: dict) -> str:
+    """
+    Узкая колонка: не более max_chars_per_line символов и max_lines строк.
+    """
+    subcfg = cfg.get("subtitles", {})
+    width = int(subcfg.get("max_chars_per_line", 24))
+    max_lines = int(subcfg.get("max_lines", 2))
+    safe = _soft_break_long_tokens(" ".join((text or "").split()), max_token=12)
+    if not safe:
+        return ""
+    lines = textwrap.wrap(safe, width=width, break_long_words=False, break_on_hyphens=True)
+    if len(lines) <= max_lines:
+        return "\n".join(lines)
+    trimmed = lines[:max_lines]
+    if len(lines) > max_lines:
+        if len(trimmed[-1]) >= max(4, width - 1):
+            trimmed[-1] = trimmed[-1][:max(1, width - 1)] + "…"
+        else:
+            trimmed[-1] += "…"
+    return "\n".join(trimmed)
 
-    style = str(sub.get("style", "outline")).lower()
-    if style == "box":
-        return (
-            f"Fontname={font},Fontsize={size},Bold=0,"
-            f"PrimaryColour=&H00FFFFFF,BackColour=&H44000000,"
-            f"BorderStyle=3,Outline=0,Shadow=0,"
-            f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
-            f"WrapStyle=2,LineSpacing={line_spacing}"
-        )
-    elif style == "shadow":
-        return (
-            f"Fontname={font},Fontsize={size},Bold=0,"
-            f"PrimaryColour=&H00FFFFFF,"
-            f"BorderStyle=1,Outline=1,Shadow=3,"
-            f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
-            f"WrapStyle=2,LineSpacing={line_spacing}"
-        )
-    else:  # outline
-        return (
-            f"Fontname={font},Fontsize={size},Bold=0,"
-            f"PrimaryColour=&H00FFFFFF,OutlineColour=&H99000000,"
-            f"BorderStyle=1,Outline=2,Shadow=0,"
-            f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
-            f"WrapStyle=2,LineSpacing={line_spacing}"
-        )
+def build_clip_srt(segments, t0, t1, cfg):
+    """
+    Строим сабы для клипа:
+      - склеиваем сегменты с микропаузами (merge_gap_ms),
+      - применяем глобальный смещение (offset_ms),
+      - ограничиваем длительность строк по скорости чтения (reading_cps) и [min,max],
+      - не даём строкам наезжать на следующий субтитр.
+    """
+    subcfg = cfg.get("subtitles", {})
+    offset = int(subcfg.get("offset_ms", 0)) / 1000.0
+    merge_gap = int(subcfg.get("merge_gap_ms", 180)) / 1000.0
+    cps = float(subcfg.get("reading_cps", 14.0))
+    min_d = int(subcfg.get("min_duration_ms", 420)) / 1000.0
+    max_d = int(subcfg.get("max_duration_ms", 3200)) / 1000.0
+
+    # 1) Берём сегменты, попадающие в окно клипа
+    raw = []
+    for s in segments:
+        st, en = float(s["start"]), float(s["end"])
+        if en <= t0 or st >= t1:
+            continue
+        st = max(t0, st); en = min(t1, en)
+        if en - st < 0.02:
+            continue
+        raw.append({"start": st, "end": en, "text": (s["text"] or "").strip()})
+    raw.sort(key=lambda x: x["start"])
+
+    # 2) Склейка коротких пауз
+    merged = []
+    for seg in raw:
+        if not merged:
+            merged.append(seg); continue
+        prev = merged[-1]
+        if seg["start"] - prev["end"] <= merge_gap:
+            prev["end"] = seg["end"]
+            joiner = " " if (prev["text"] and seg["text"]) else ""
+            prev["text"] = (prev["text"] + joiner + seg["text"]).strip()
+        else:
+            merged.append(seg)
+
+    # 3) Построение итоговых сабов
+    subs = []
+    for i, m in enumerate(merged):
+        st = (m["start"] + offset) - t0
+        en = (m["end"] + offset) - t0
+        if en - st < 0.02:
+            continue
+
+        next_st_abs = (merged[i+1]["start"] + offset) - t0 if i+1 < len(merged) else (t1 - t0)
+        max_en_by_next = next_st_abs - 0.06  # небольшой зазор
+
+        text_wrapped = _wrap_lines_cfg(m["text"], cfg)
+        if not text_wrapped:
+            continue
+
+        # желаемая длительность: минимум — по исходному, но с ограничителями
+        desired = max(min_d, min(max_d, max(en - st, len(m["text"]) / max(1e-6, cps))))
+        en2 = min(st + desired, max_en_by_next, (t1 - t0))
+        if en2 - st < 0.08:
+            en2 = min(en, (t1 - t0))
+        if en2 <= st:
+            continue
+
+        subs.append(_srt.Subtitle(
+            index=len(subs)+1,
+            start=_srt.timedelta(seconds=st),
+            end=_srt.timedelta(seconds=en2),
+            content=text_wrapped
+        ))
+
+    return _srt.compose(subs) if subs else ""
+
 
 def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str, Any], cfg: Dict[str, Any]):
     """
