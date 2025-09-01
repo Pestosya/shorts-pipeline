@@ -7,19 +7,32 @@ from .edit import render_clip
 
 LOG = logging.getLogger("pipeline.main")
 
+def _soft_break_long_tokens(text: str, max_token: int = 12) -> str:
+    """
+    Вставляем нулевую ширину пробел (U+200B) внутрь очень длинных слов,
+    чтобы libass мог переносить строку. Например: "супердлинноеслово" → "супердлинно\u200bеслово".
+    """
+    out = []
+    for tok in text.split():
+        if len(tok) > max_token:
+            chunks = [tok[i:i+max_token] for i in range(0, len(tok), max_token)]
+            out.append("\u200b".join(chunks))
+        else:
+            out.append(tok)
+    return " ".join(out)
+
 def _wrap_lines_cfg(text: str, cfg: dict) -> str:
     import textwrap
     subcfg = cfg.get("subtitles", {})
-    width = int(subcfg.get("max_chars_per_line", 26))
+    width = int(subcfg.get("max_chars_per_line", 24))  # чуть уже по умолчанию
     max_lines = int(subcfg.get("max_lines", 2))
-
-    words = " ".join((text or "").split())
-    if not words:
+    # мягкий перенос длинных слов
+    safe = _soft_break_long_tokens(" ".join((text or "").split()), max_token=12)
+    if not safe:
         return ""
-    lines = textwrap.wrap(words, width=width)
+    lines = textwrap.wrap(safe, width=width, break_long_words=False, break_on_hyphens=True)
     if len(lines) <= max_lines:
         return "\n".join(lines)
-
     trimmed = lines[:max_lines]
     if len(lines) > max_lines:
         if len(trimmed[-1]) >= max(4, width - 1):
@@ -32,23 +45,24 @@ def build_clip_srt(segments, t0, t1, cfg):
     subs=[]
     idx=1
     for s in segments:
-        if s["end"] < t0 or s["start"] > t1:
+        if s["end"] <= t0 or s["start"] >= t1:
             continue
         st = max(t0, s["start"])
         en = min(t1, s["end"])
-        if st >= en:
+        if en - st < 0.01:
             continue
         content = _wrap_lines_cfg(s["text"], cfg)
         if not content:
             continue
         subs.append(srt.Subtitle(
             index=idx,
-            start=srt.timedelta(seconds=st-t0),
-            end=srt.timedelta(seconds=en-t0),
+            start=srt.timedelta(seconds=st - t0),
+            end=srt.timedelta(seconds=en - t0),
             content=content
         ))
         idx += 1
     return srt.compose(subs) if subs else ""
+
 
 
 

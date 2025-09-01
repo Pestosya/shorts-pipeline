@@ -15,14 +15,14 @@ def _build_sub_style(cfg: dict) -> str:
     font = sub.get("font", "Arial")
     size = int(sub.get("size", 22))
     margin_v = int(sub.get("margin_v", 120))
-    margin_lr = int(sub.get("margin_lr", 160))
+    margin_lr = int(sub.get("margin_lr", 180))   # чуть шире поля, чтобы столбец был уже
     line_spacing = int(sub.get("line_spacing", 2))
 
-    # Жёстко фиксируем низ кадра:
+    # Жёсткий низ кадра, центр
     align = 2  # bottom-center
 
-    style_name = str(sub.get("style", "box")).lower()
-    if style_name == "box":
+    style = str(sub.get("style", "outline")).lower()
+    if style == "box":
         return (
             f"Fontname={font},Fontsize={size},Bold=0,"
             f"PrimaryColour=&H00FFFFFF,BackColour=&H44000000,"
@@ -30,15 +30,7 @@ def _build_sub_style(cfg: dict) -> str:
             f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
             f"WrapStyle=2,LineSpacing={line_spacing}"
         )
-    elif style_name == "outline":
-        return (
-            f"Fontname={font},Fontsize={size},Bold=0,"
-            f"PrimaryColour=&H00FFFFFF,OutlineColour=&H99000000,"
-            f"BorderStyle=1,Outline=2,Shadow=0,"
-            f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
-            f"WrapStyle=2,LineSpacing={line_spacing}"
-        )
-    else:
+    elif style == "shadow":
         return (
             f"Fontname={font},Fontsize={size},Bold=0,"
             f"PrimaryColour=&H00FFFFFF,"
@@ -46,6 +38,15 @@ def _build_sub_style(cfg: dict) -> str:
             f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
             f"WrapStyle=2,LineSpacing={line_spacing}"
         )
+    else:  # outline (легче всего читается)
+        return (
+            f"Fontname={font},Fontsize={size},Bold=0,"
+            f"PrimaryColour=&H00FFFFFF,OutlineColour=&H99000000,"
+            f"BorderStyle=1,Outline=2,Shadow=0,"
+            f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
+            f"WrapStyle=2,LineSpacing={line_spacing}"
+        )
+
 
 
 
@@ -155,13 +156,16 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     to = clip_len
 
     # Сначала рендерим «чистый» клип во временный файл…
+    # Сначала рендерим «чистый» клип во временный файл…
     tmp_out = out_path.with_suffix(".prepro.mp4")
     args = [
-        "-ss", f"{ss:.3f}", "-i", str(input_path),
+        "-i", str(input_path),  # ← сначала вход
+        "-ss", f"{ss:.3f}",  # ← точный seek ПОСЛЕ -i
         "-t", f"{to:.3f}",
         "-filter_complex", final_vf,
         "-r", str(cfg["processing"]["target_fps"]),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-avoid_negative_ts", "make_zero",
     ]
     if has_audio and af_chain:
         args += ["-c:a", "aac", "-b:a", "160k", "-af", ",".join(af_chain)]

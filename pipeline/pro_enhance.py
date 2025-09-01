@@ -19,6 +19,16 @@ def _has_audio(path: Path) -> bool:
     except Exception:
         return False
 
+def _probe_dims(path: Path):
+    import json, subprocess
+    cmd = ["ffprobe","-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","json",str(path)]
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        return None, None
+    j = json.loads(p.stdout)
+    st = (j.get("streams") or [{}])[0]
+    return st.get("width"), st.get("height")
+
 def enhance_postprocess(in_path: Path, out_path: Path, cfg: dict):
     """
     Финальная полировка:
