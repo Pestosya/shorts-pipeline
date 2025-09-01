@@ -162,7 +162,7 @@ pro:
 
 subtitles:
   # Стиль сабов: "box" (полупрозрачная плашка), "outline" (обводка), "shadow" (тень)
-  style: box
+  style: outline
   # Позиция: bottom | top
   position: bottom
 

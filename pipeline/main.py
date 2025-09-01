@@ -20,7 +20,6 @@ def _wrap_lines_cfg(text: str, cfg: dict) -> str:
     if len(lines) <= max_lines:
         return "\n".join(lines)
 
-    # обрежем до max_lines, аккуратно добавив троеточие
     trimmed = lines[:max_lines]
     if len(lines) > max_lines:
         if len(trimmed[-1]) >= max(4, width - 1):
@@ -29,7 +28,7 @@ def _wrap_lines_cfg(text: str, cfg: dict) -> str:
             trimmed[-1] += "…"
     return "\n".join(trimmed)
 
-def build_clip_srt(segments, t0, t1):
+def build_clip_srt(segments, t0, t1, cfg):
     subs=[]
     idx=1
     for s in segments:
@@ -42,8 +41,12 @@ def build_clip_srt(segments, t0, t1):
         content = _wrap_lines_cfg(s["text"], cfg)
         if not content:
             continue
-        subs.append(srt.Subtitle(index=idx, start=srt.timedelta(seconds=st-t0),
-                                 end=srt.timedelta(seconds=en-t0), content=content))
+        subs.append(srt.Subtitle(
+            index=idx,
+            start=srt.timedelta(seconds=st-t0),
+            end=srt.timedelta(seconds=en-t0),
+            content=content
+        ))
         idx += 1
     return srt.compose(subs) if subs else ""
 
@@ -73,7 +76,7 @@ def process_one(cfg, video_path: Path):
 
     rendered = []
     for k, clip in enumerate(clips, 1):
-        clip_srt_text = build_clip_srt(t["segments"], clip["start"], clip["end"])
+        clip_srt_text = build_clip_srt(t["segments"], clip["start"], clip["end"], cfg)
         clip_srt_path = out_dir / f"{slugify(show)}_{season_ep}_clip{k}.srt"
         with open(clip_srt_path, "w", encoding="utf-8") as f:
             f.write(clip_srt_text)
