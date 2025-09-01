@@ -7,19 +7,24 @@ from .edit import render_clip
 
 LOG = logging.getLogger("pipeline.main")
 
-def _wrap_lines(text: str, max_width: int = 34, max_lines: int = 2) -> str:
-    # мягкий перенос по словам до max_width, максимум max_lines
+def _wrap_lines_cfg(text: str, cfg: dict) -> str:
     import textwrap
-    words = " ".join(text.split())
-    lines = textwrap.wrap(words, width=max_width)
+    subcfg = cfg.get("subtitles", {})
+    width = int(subcfg.get("max_chars_per_line", 26))
+    max_lines = int(subcfg.get("max_lines", 2))
+
+    words = " ".join((text or "").split())
+    if not words:
+        return ""
+    lines = textwrap.wrap(words, width=width)
     if len(lines) <= max_lines:
         return "\n".join(lines)
-    # если больше — склеим первые max_lines-1 и добавим последнюю обрезанную
+
+    # обрежем до max_lines, аккуратно добавив троеточие
     trimmed = lines[:max_lines]
-    # добавим троеточие в конец, если урезали заметно
     if len(lines) > max_lines:
-        if len(trimmed[-1]) > max_width - 1:
-            trimmed[-1] = trimmed[-1][:max_width-1] + "…"
+        if len(trimmed[-1]) >= max(4, width - 1):
+            trimmed[-1] = trimmed[-1][:max(1, width - 1)] + "…"
         else:
             trimmed[-1] += "…"
     return "\n".join(trimmed)
@@ -34,10 +39,14 @@ def build_clip_srt(segments, t0, t1):
         en = min(t1, s["end"])
         if st >= en:
             continue
-        content = _wrap_lines(s["text"], max_width=34, max_lines=2)
-        subs.append(srt.Subtitle(index=idx, start=srt.timedelta(seconds=st-t0), end=srt.timedelta(seconds=en-t0), content=content))
+        content = _wrap_lines_cfg(s["text"], cfg)
+        if not content:
+            continue
+        subs.append(srt.Subtitle(index=idx, start=srt.timedelta(seconds=st-t0),
+                                 end=srt.timedelta(seconds=en-t0), content=content))
         idx += 1
     return srt.compose(subs) if subs else ""
+
 
 
 def process_one(cfg, video_path: Path):

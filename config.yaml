@@ -10,7 +10,7 @@ processing:
   use_gpu: true            # true если есть NVIDIA (CUDA)
   device_index: 0
   whisper_model: medium    # tiny/base/small/medium/large-v3
-  max_clips_per_episode: 10
+  max_clips_per_episode: 40
   min_clip_len_sec: 15
   max_clip_len_sec: 58
   target_fps: 30
@@ -159,3 +159,22 @@ pro:
   speech_normalize: true
   ducking: true
   speed_variation: true
+
+subtitles:
+  # Стиль сабов: "box" (полупрозрачная плашка), "outline" (обводка), "shadow" (тень)
+  style: box
+  # Позиция: bottom | top
+  position: bottom
+
+  # Шрифт и размеры
+  font: Arial
+  size: 22            # общий кегль (сделаем компактно)
+  line_spacing: 2     # межстрочный интервал
+
+  # Внешние поля относительно кадра (делаем уже и выше от низа)
+  margin_v: 120
+  margin_lr: 160
+
+  # Ограничения на ширину/высоту текста
+  max_chars_per_line: 26
+  max_lines: 2

@@ -10,6 +10,47 @@ from .framing import suggest_crop
 LOG = logging.getLogger("pipeline.edit")
 
 
+def _build_sub_style(cfg: dict) -> str:
+    sub = cfg.get("subtitles", {})
+    font = sub.get("font", "Arial")
+    size = int(sub.get("size", 22))
+    margin_v = int(sub.get("margin_v", 120))
+    margin_lr = int(sub.get("margin_lr", 160))
+    line_spacing = int(sub.get("line_spacing", 2))
+    position = str(sub.get("position", "bottom")).lower()
+    align = 2 if position == "bottom" else 8  # 2=bottom-center, 8=top-center
+
+    style_name = str(sub.get("style", "box")).lower()
+
+    if style_name == "box":
+        # Плашка под текст (полупрозрачная), без жирности
+        return (
+            f"Fontname={font},Fontsize={size},Bold=0,"
+            f"PrimaryColour=&H00FFFFFF,BackColour=&H55000000,"
+            f"BorderStyle=3,Outline=0,Shadow=0,"
+            f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
+            f"WrapStyle=2,LineSpacing={line_spacing}"
+        )
+    elif style_name == "outline":
+        # Белый текст с мягкой обводкой + небольшой shadow
+        return (
+            f"Fontname={font},Fontsize={size},Bold=0,"
+            f"PrimaryColour=&H00FFFFFF,OutlineColour=&HAA000000,"
+            f"BorderStyle=1,Outline=3,Shadow=1,"
+            f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
+            f"WrapStyle=2,LineSpacing={line_spacing}"
+        )
+    else:
+        # Тень (минимальная обводка)
+        return (
+            f"Fontname={font},Fontsize={size},Bold=0,"
+            f"PrimaryColour=&H00FFFFFF,"
+            f"BorderStyle=1,Outline=1,Shadow=3,"
+            f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
+            f"WrapStyle=2,LineSpacing={line_spacing}"
+        )
+
+
 def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str, Any], cfg: Dict[str, Any]):
     """
     Рендер клипа:
@@ -89,18 +130,8 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     # уменьшили относительно anti['subtitle_fontsize'] и добавили полупрозрачный фон
     # Субтитры — компактные и читабельные (Windows-дружелюбный Arial)
     # Субтитры — компактные: меньше кегль, большие поля, мягкий оутлайн
-    sub_fs = max(20, min(24, anti.get("subtitle_fontsize", sub_base) - 2))
-    margin_v = int(render.get("subtitle_margin_v", 110))
-    margin_lr = int(render.get("subtitle_margin_lr", 130))
-    line_spacing = int(render.get("subtitle_line_spacing", 4))
 
-    style = (
-        f"Fontname=Arial,Fontsize={sub_fs},"
-        f"PrimaryColour=&H00FFFFFF,OutlineColour=&H99000000,"
-        f"BorderStyle=1,Outline=2,Shadow=0,"
-        f"Alignment=2,MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
-        f"WrapStyle=2,Spacing=0,OutlineAlpha=0,BackColour=&H40000000,LineSpacing={line_spacing}"
-    )
+    style = _build_sub_style(cfg)
     vf_chain.append(f"subtitles=f='{srt_escape(srt_path)}':charenc=UTF-8:force_style='{style}'")
 
     # Оверлеи из anti (watermark/banner) — уже безопасны после правки antidetect.py
