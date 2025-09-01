@@ -17,31 +17,28 @@ def _build_sub_style(cfg: dict) -> str:
     margin_v = int(sub.get("margin_v", 120))
     margin_lr = int(sub.get("margin_lr", 160))
     line_spacing = int(sub.get("line_spacing", 2))
-    position = str(sub.get("position", "bottom")).lower()
-    align = 2 if position == "bottom" else 8  # 2=bottom-center, 8=top-center
+
+    # Жёстко фиксируем низ кадра:
+    align = 2  # bottom-center
 
     style_name = str(sub.get("style", "box")).lower()
-
     if style_name == "box":
-        # Плашка под текст (полупрозрачная), без жирности
         return (
             f"Fontname={font},Fontsize={size},Bold=0,"
-            f"PrimaryColour=&H00FFFFFF,BackColour=&H55000000,"
+            f"PrimaryColour=&H00FFFFFF,BackColour=&H44000000,"
             f"BorderStyle=3,Outline=0,Shadow=0,"
             f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
             f"WrapStyle=2,LineSpacing={line_spacing}"
         )
     elif style_name == "outline":
-        # Белый текст с мягкой обводкой + небольшой shadow
         return (
             f"Fontname={font},Fontsize={size},Bold=0,"
-            f"PrimaryColour=&H00FFFFFF,OutlineColour=&HAA000000,"
-            f"BorderStyle=1,Outline=3,Shadow=1,"
+            f"PrimaryColour=&H00FFFFFF,OutlineColour=&H99000000,"
+            f"BorderStyle=1,Outline=2,Shadow=0,"
             f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
             f"WrapStyle=2,LineSpacing={line_spacing}"
         )
     else:
-        # Тень (минимальная обводка)
         return (
             f"Fontname={font},Fontsize={size},Bold=0,"
             f"PrimaryColour=&H00FFFFFF,"
@@ -49,6 +46,7 @@ def _build_sub_style(cfg: dict) -> str:
             f"Alignment={align},MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
             f"WrapStyle=2,LineSpacing={line_spacing}"
         )
+
 
 
 def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str, Any], cfg: Dict[str, Any]):
@@ -126,6 +124,11 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     for f in anti.get("vf", []):
         vf_chain.append(f)
 
+
+    # Оверлеи из anti (watermark/banner) — уже безопасны после правки antidetect.py
+    ov = anti.get("overlay") or {}
+    if ov.get("filter"):
+        vf_chain.append(ov["filter"])
     # Субтитры — компактнее и читабельнее
     # уменьшили относительно anti['subtitle_fontsize'] и добавили полупрозрачный фон
     # Субтитры — компактные и читабельные (Windows-дружелюбный Arial)
@@ -134,11 +137,6 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     style = _build_sub_style(cfg)
     vf_chain.append(f"subtitles=f='{srt_escape(srt_path)}':charenc=UTF-8:force_style='{style}'")
 
-    # Оверлеи из anti (watermark/banner) — уже безопасны после правки antidetect.py
-    ov = anti.get("overlay") or {}
-    if ov.get("filter"):
-        vf_chain.append(ov["filter"])
-
     # Плавные видео-фейды
     if clip_len > (fade_in + fade_out + 0.1):
         vf_chain.append(f"fade=t=in:st=0:d={fade_in}")
@@ -146,6 +144,8 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
 
     # Аудио-цепочка (антидетект + фейды), если есть звук у источника
     af_chain: List[str] = list(anti.get("af", []))
+    # убираем любые изменения темпа на этой стадии — иначе сабы уедут
+    af_chain = [f for f in af_chain if not f.strip().startswith("atempo=")]
     if has_audio and clip_len > (fade_in + fade_out + 0.1):
         af_chain.append(f"afade=t=in:st=0:d={fade_in}")
         af_chain.append(f"afade=t=out:st={max(0.0, clip_len - fade_out)}:d={fade_out}")
