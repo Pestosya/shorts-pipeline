@@ -120,25 +120,23 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
             f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease",
             f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2"
         ]
-
-    # Антидетект (видео)
+    # Оверлеи из anti (watermark/banner) — уже безопасны после правки antidetect.py
     for f in anti.get("vf", []):
         vf_chain.append(f)
 
-
-    # Оверлеи из anti (watermark/banner) — уже безопасны после правки antidetect.py
+    # 3) Оверлей (если есть) — перед сабами, чтобы текст был сверху
     ov = anti.get("overlay") or {}
     if ov.get("filter"):
         vf_chain.append(ov["filter"])
-    # Субтитры — компактнее и читабельнее
-    # уменьшили относительно anti['subtitle_fontsize'] и добавили полупрозрачный фон
-    # Субтитры — компактные и читабельные (Windows-дружелюбный Arial)
-    # Субтитры — компактные: меньше кегль, большие поля, мягкий оутлайн
 
+    # 4) Приводим формат, чтобы libass точно рисовал поверх (без «чёрного»)
+    vf_chain.append("format=yuv420p")
+
+    # 5) Субтитры — последними из «контента»
     style = _build_sub_style(cfg)
     vf_chain.append(f"subtitles=f='{srt_escape(srt_path)}':charenc=UTF-8:force_style='{style}'")
 
-    # Плавные видео-фейды
+    # 6) Плавные фейды
     if clip_len > (fade_in + fade_out + 0.1):
         vf_chain.append(f"fade=t=in:st=0:d={fade_in}")
         vf_chain.append(f"fade=t=out:st={max(0.0, clip_len - fade_out)}:d={fade_out}")
@@ -159,8 +157,8 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     # Сначала рендерим «чистый» клип во временный файл…
     tmp_out = out_path.with_suffix(".prepro.mp4")
     args = [
-        "-i", str(input_path),  # ← сначала вход
-        "-ss", f"{ss:.3f}",  # ← точный seek ПОСЛЕ -i
+        "-i", str(input_path),  # сначала вход
+        "-ss", f"{ss:.3f}",  # потом seek — точный тайминг сабов
         "-t", f"{to:.3f}",
         "-filter_complex", final_vf,
         "-r", str(cfg["processing"]["target_fps"]),

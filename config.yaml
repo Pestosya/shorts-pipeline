@@ -161,20 +161,17 @@ pro:
   speed_variation: true
 
 subtitles:
-  # Стиль сабов: "box" (полупрозрачная плашка), "outline" (обводка), "shadow" (тень)
   style: outline
-  # Позиция: bottom | top
-  position: bottom
-
-  # Шрифт и размеры
   font: Arial
-  size: 22            # общий кегль (сделаем компактно)
-  line_spacing: 2     # межстрочный интервал
-
-  # Внешние поля относительно кадра (делаем уже и выше от низа)
-  margin_v: 120
-  margin_lr: 160
-
-  # Ограничения на ширину/высоту текста
-  max_chars_per_line: 26
+  size: 22
+  line_spacing: 2
+  margin_v: 130
+  margin_lr: 190
+  max_chars_per_line: 24
   max_lines: 2
+  offset_ms: 0        # если сабы запаздывают → -120; спешат → +120
+  merge_gap_ms: 180
+  reading_cps: 14.0
+  min_duration_ms: 420
+  max_duration_ms: 3200
+
