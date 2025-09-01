@@ -159,13 +159,20 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     filter_complex = ";".join(vf_nodes + a_nodes)
 
     # Сборка аргументов: точный seek → -ss ПОСЛЕ -i, явные map
+    # --- Сборка аргументов FFmpeg (устойчиво для "капризных" MKV) ---
     tmp_out = out_path.with_suffix(".prepro.mp4")
-    args = ["-y", "-hide_banner", "-loglevel", "error"]
-    args += ["-i", str(input_path)]
+
+    # Ключевой seek перед входом + глубокое зондирование контейнера
+    args = [
+        "-y", "-hide_banner", "-loglevel", "error",
+        "-analyzeduration", "100M", "-probesize", "100M",
+        "-ss", f"{ss:.3f}",  # ← КЛЮЧЕВОЙ seek ДО -i (устойчиво)
+        "-i", str(input_path),
+    ]
     if overlay_added:
         args += ["-i", str(overlay_img)]
+
     args += [
-        "-ss", f"{ss:.3f}",
         "-t", f"{to:.3f}",
         "-filter_complex", filter_complex,
         "-map", "[vout]", "-map", "[aout]",
@@ -174,12 +181,11 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
         "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k",
         "-movflags", "+faststart",
-        "-avoid_negative_ts", "make_zero",
         "-shortest",
         str(tmp_out),
     ]
-    LOG.info("FFmpeg: ffmpeg %s", " ".join(args))
 
+    LOG.info("FFmpeg: ffmpeg %s", " ".join(args))
     run_ffmpeg(args)
 
     # Финальный постпроцесс (нормализация/музыка/дакинг/единый темп) — опционально
