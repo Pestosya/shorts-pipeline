@@ -21,7 +21,7 @@ processing:
 render:
   target_width: 1080
   target_height: 1920
-  smart_crop: true          # ← включить умный кроп
+  smart_crop: true
   subtitle_fontsize_base: 24
   subtitle_margin_v: 110
   subtitle_margin_lr: 130

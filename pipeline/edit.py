@@ -1,10 +1,14 @@
-import os
 from pathlib import Path
-from typing import Dict, Any
-from .utils import run_ffmpeg, srt_escape
-from .pro_enhance import enhance_postprocess
+from typing import Dict, Any, List
+import os, logging
+
+from .utils import run_ffmpeg, srt_escape, media_info
 from .antidetect import build_antidetect_filters
+from .pro_enhance import enhance_postprocess
 from .framing import suggest_crop
+
+LOG = logging.getLogger("pipeline.edit")
+
 
 def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str, Any], cfg: Dict[str, Any]):
     """
@@ -35,6 +39,7 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     )
 
     # Геометрия исходника → выбираем fill/pad, c optional smart-crop
+    # Геометрия исходника → выбираем fill/pad, c optional smart-crop
     try:
         info = media_info(input_path)
         src_w, src_h = int(info.get("width", 1920)), int(info.get("height", 1080))
@@ -45,25 +50,32 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
     target_w = int(render.get("target_width", 1080))
     target_h = int(render.get("target_height", 1920))
     target_ar = target_w / target_h
-    src_ar = (src_w / src_h) if src_h else (16 / 9)
+    src_ar = (src_w / max(1, src_h)) if src_h else (16 / 9)
 
     vf_chain: List[str] = []
     smart_crop = bool(render.get("smart_crop", True))
     if src_ar >= target_ar:
-        # landscape → fill + (опционально) умный кроп по лицам/интересу
+        # landscape → fill + (опционально) умный кроп (лицо/интерес)
         if smart_crop:
-            cx, cy = suggest_crop(input_path, clip["start"], clip_len, src_w, src_h, target_w, target_h)
-            vf_chain += [
-                f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase",
-                f"crop={target_w}:{target_h}:{int(cx)}:{int(cy)}"
-            ]
+            try:
+                cx, cy = suggest_crop(input_path, clip["start"], clip_len, src_w, src_h, target_w, target_h)
+                vf_chain += [
+                    f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase",
+                    f"crop={target_w}:{target_h}:{int(cx)}:{int(cy)}"
+                ]
+            except Exception as e:
+                LOG.warning("smart_crop failed: %s; fallback to center-crop", e)
+                vf_chain += [
+                    f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase",
+                    f"crop={target_w}:{target_h}:(iw-{target_w})/2:(ih-{target_h})/2"
+                ]
         else:
             vf_chain += [
                 f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase",
                 f"crop={target_w}:{target_h}:(iw-{target_w})/2:(ih-{target_h})/2"
             ]
     else:
-        # вертикальные/узкие → вписать и допаддить
+        # узкие/вертикальные → вписать и допаддить
         vf_chain += [
             f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease",
             f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2"
@@ -89,7 +101,6 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
         f"Alignment=2,MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
         f"WrapStyle=2,Spacing=0,OutlineAlpha=0,BackColour=&H40000000,LineSpacing={line_spacing}"
     )
-
     vf_chain.append(f"subtitles=f='{srt_escape(srt_path)}':charenc=UTF-8:force_style='{style}'")
 
     # Оверлеи из anti (watermark/banner) — уже безопасны после правки antidetect.py
