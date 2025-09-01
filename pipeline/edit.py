@@ -93,9 +93,24 @@ def render_clip(input_path: Path, srt_path: Path, out_path: Path, clip: Dict[str
         clip_duration=to,
         base_sub_fontsize=30
     )
-    for f in anti.get("vf", []):
-        vf_nodes.append(f"{current}{',' if f and not f.strip().startswith('[') else ''}{f}[v3]")
-        current = "[v3]"
+    # 2) Антидетект (цвет/шарп/шум) — без лишних запятых и с уникальными метками
+    anti = build_antidetect_filters(
+        seed_key=f"{input_path.name}:{clip['start']:.3f}-{clip['end']:.3f}",
+        cfg=cfg,
+        clip_duration=to,
+        base_sub_fontsize=30
+    )
+    anti_vf: List[str] = [f.strip() for f in anti.get("vf", []) if f and f.strip()]
+
+    label = current  # например, "[v2]" после геометрии
+    step = 3
+    for f in anti_vf:
+        # ВАЖНО: НИКАКОЙ запятой после метки. Правильно: "[v2]noise=..."
+        vf_nodes.append(f"{label}{f}[v{step}]")
+        label = f"[v{step}]"
+        step += 1
+
+    current = label
 
     # 3) Overlay (если картинка существует) — ДЕЛАЕМ НАДЁЖНО через второй input
     ov = (anti.get("overlay") or {})
